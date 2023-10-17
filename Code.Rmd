@@ -1,0 +1,143 @@
+---
+title: "Comparative-Analysis-of-RF-and-Xgboost-with-Varying-SNR"
+author: "ZHOU,Tianying"
+date: "2023-04-25"
+output: 
+  html_document: 
+    toc: yes
+    toc_depth: 2
+    theme: lumen
+---
+
+## 1 Load data
+
+```{r message=FALSE, warning=FALSE}
+library(randomForest)
+library(xgboost)
+library(ggplot2)
+```
+
+```{r}
+X_test <- read.table("D:\\HKUST\\X_test.txt", header = T)
+X_train <- read.table("D:\\HKUST\\X_train.txt", header = T)
+y_test_high_snr <- read.table("D:\\HKUST\\y_test_high_snr.txt", header = T)
+y_test_low_snr <- read.table("D:\\HKUST\\y_test_low_snr.txt", header = T)
+y_train_high_snr <- read.table("D:\\HKUST\\y_train_high_snr.txt", header = T)
+y_train_low_snr <- read.table("D:\\HKUST\\y_train_low_snr.txt", header = T)
+```
+
+|   Case   | Train_X |     Train_Y      | Test_X |     Test_Y      |
+|:--------:|:-------:|:----------------:|:------:|:---------------:|
+| High SNR | X_train | y_train_high_snr | X_test | y_test_high_snr |
+| Low SNR  | X_train | y_train_low_snr  | X_test | y_test_low_snr  |
+
+## 2.1 mtry
+
+### 2.1.1 Code
+
+-   `mtry`: number of variables randomly sampled as candidates at each split
+
+```{r}
+mtry_high_snr <- seq(10, 50, by = 2)
+mse_high_snr <- c()
+for (i in 1:length(mtry_high_snr)) {
+  fit_rf <- randomForest(x = X_train, y = c(y_train_high_snr)$y, xtest = X_test, ytest = c(y_test_high_snr)$y, mtry = mtry_high_snr[i])
+  # cat(i, "-th repitition, finished.\n")
+  mse_high_snr <- append(mse_high_snr, mean(fit_rf$test$mse))
+}
+```
+
+```{r}
+mtry_low_snr <- seq(2, 50, by = 2)
+mse_low_snr <- c()
+for (i in 1:length(mtry_low_snr)) {
+  fit_rf <- randomForest(x = X_train, y = c(y_train_low_snr)$y, xtest = X_test, ytest = c(y_test_low_snr)$y, mtry = mtry_low_snr[i])
+  mse_low_snr <- append(mse_low_snr, mean(fit_rf$test$mse))
+}
+```
+
+### 2.2.2 Visualization
+
+```{r}
+out_high_snr <- data.frame(mtry = mtry_high_snr, MSE = mse_high_snr)
+ggplot(data = out_high_snr, mapping = aes(x = mtry, y = MSE)) + 
+  geom_line() + 
+  geom_point() +
+  ggtitle("Performance with different mtry in high SNR") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+```{r}
+out_low_snr <- data.frame(mtry = mtry_low_snr, MSE = mse_low_snr)
+ggplot(data = out_low_snr, mapping = aes(x = mtry, y = MSE)) + 
+  geom_line() + 
+  geom_point() +
+  ggtitle("Performance with different mtry in low SNR") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+### 2.1.3 Conclusion
+
+Mtry means the number of variables randomly sampled as candidates at each split. For regression, the default value is p/3=16.
+
+From the result, we find that when signal-to-noise ratios is high, the error decreases with `mtry`. When SNR is low, the error increases fluctuatingly.
+
+Therefore, if the signal is significant we should use large `mtry`, i.e., at each split we add more variables. If the signal is weak, we prefer less variables.
+
+## 2.2 learning rate
+
+### 2.2.1 Code
+
+-   `nrounds`: max number of boosting iterations
+
+-   `eta`: control the learning rate
+
+```{r results="hide"}
+eta_all <- seq(0, 1, by = 0.03)
+mse_high <- c()
+for (i in 1:length(eta_all)){
+  bst <- xgboost(data = as.matrix(X_train), label = c(y_train_high_snr)$y, eta = eta_all[i], nrounds = 3)
+  y_pre_high_snr <- predict(bst, as.matrix(X_test))
+  mse_high <- append(mse_high, sum((c(y_test_high_snr)$y - y_pre_high_snr)^2)/length(y_pre_high_snr))
+}
+```
+
+```{r results="hide"}
+eta_all <- seq(0, 1, by = 0.03)
+mse_low <- c()
+for (i in 1:length(eta_all)){
+  bst <- xgboost(data = as.matrix(X_train), label = c(y_train_low_snr)$y, eta = eta_all[i], nrounds = 3)
+  y_pre_low_snr <- predict(bst, as.matrix(X_test))
+  mse_low <- append(mse_low, sum((c(y_test_low_snr)$y - y_pre_low_snr)^2)/length(y_pre_low_snr))
+}
+```
+
+### 2.2.2 Visualization
+
+```{r}
+out_high <- data.frame(learning_rate = eta_all, MSE = mse_high)
+ggplot(data = out_high, mapping = aes(x = learning_rate, y = MSE)) + 
+  geom_line() + 
+  geom_point() +
+  ggtitle("Performance with different learning rate in high SNR") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+```{r}
+out_low <- data.frame(learning_rate = eta_all, MSE = mse_low)
+ggplot(data = out_low, mapping = aes(x = learning_rate, y = MSE)) + 
+  geom_line() + 
+  geom_point() +
+  ggtitle("Performance with different learning rate in low SNR") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+### 2.2.3 Conclusion
+
+From the result, we can see the error decreases and then increases with learning rate when SNR is high, and reaches minimum when `eta` is around 0.4. When SNR is low, the error continuously increases with learning rate.
+
+Actually, `eta` scale the contribution of each tree, which is used to prevent overfitting. It's like some kind of "Shrinkage". low `eta` value means model more robust to overfitting but slower to compute.
+
+When the signal is significant, i.e. high SNR, we can choose learning rate at around 0.4.
+
+When the signal is weak, we can choose small learning rate, which means we need more iterations. This is reasonable because trees under low SNR are not very reliable, we should make the contribution of each tree smaller.
